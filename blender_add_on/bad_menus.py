@@ -30,7 +30,7 @@ class BAD_PT_MainPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         settings = context.object.bad_settings
-        #print("lol")
+
         layout.prop(settings, "m_is_enabled", text = "Is Enabled")
         col = layout.column(align = False)
         row = col.row(align = True)
@@ -47,5 +47,3 @@ class BAD_PT_MainPanel(bpy.types.Panel):
         else:
             row.prop(settings, "m_render_resolution_height", text = "Resolution Height")
         row.prop(settings, "m_toggle_snapping_height", text = "")
-        #layout.prop(settings, "m_render_resolution_width", text = "Resolution ")
-        #layout.prop(settings, "m_render_resolution_width", text = "Resolution Width")

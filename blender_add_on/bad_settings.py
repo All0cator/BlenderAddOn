@@ -36,14 +36,9 @@ class BAD_PROPERTYGROUP_Settings(bpy.types.PropertyGroup):
 
     def set_render_resolution_width_power(self, new_render_resolution_width_power : int):
         self.guard = True
-        #print(f"Power: {self.m_render_resolution_width_power} ({type(self.m_render_resolution_width_power)})")
-        #return None
-        #print(f"Width: {1 << int(self.m_render_resolution_width_power)} ({type(1 << int(self.m_render_resolution_width_power))})")
         self.m_render_resolution_width_power = int(new_render_resolution_width_power)
         self.m_render_resolution_width = int(1 << int(self.m_render_resolution_width_power))
         self.guard = False
-        #print(self.m_render_resolution_width)
-
 
     def set_render_resolution_height_power(self, new_render_resolution_height_power : int):
         self.guard = True

@@ -16,18 +16,18 @@
 #  ***** GPL LICENSE BLOCK *****
 
 vertex_shader_source_object_id_depth = """
-//in vec3 pos;
+//layout(location = 0) in vec3 pos;
 
 // uniform mat4 mvp;
 
 void main() {
-    gl_Position = mvp * vec4(pos, 1.0);
+    gl_Position = mvp * vec4(pos, 1.0f);
 }
 """
 
 fragment_shader_source_object_id_depth = """
-//out float objectID;
-//out float linearizedDepth;
+//layout(location = 0) out float objectID;
+//layout(location = 1) out float linearizedDepth;
 
 //uniform float near; // Near and far plane values in projection matrix
 //uniform float far;
@@ -44,5 +44,38 @@ void main() {
     float depthLinear = LinearizeDepth(gl_FragCoord.z);
     objectID = id;
     linearizedDepth = (depthLinear - near) / (far - near); // normalize depth
+}
+"""
+
+
+
+vertex_shader_source_texture_display = """
+// layout(location = 0) in vec2 pos;
+// layout(location = 1) in vec2 texCoord;
+
+// out vec2 fragTex;
+
+void main() {
+    fragTex = texCoord;
+    gl_Position = vec4(pos, 0.0f, 1.0f);
+}
+"""
+
+fragment_shader_source_texture_display = """
+//in vec2 fragTex;
+
+//layout(location = 0) out vec4 fragOut; 
+
+//uniform sampler2D tex;
+//uniform float isMultipleChannels; // 1.0f or 0.0f
+void main() {
+    vec4 texel = texture(tex, fragTex);
+
+    // single channel display as grayscale value
+    vec4 singleChannel = vec4(texel.r, texel.r, texel.r, 1.0f);
+    // multiple channels display as color value
+    vec4 multipleChannels = texel;
+
+    fragOut = singleChannel * (1.0f - isMultipleChannels) + multipleChannels * isMultipleChannels;
 }
 """

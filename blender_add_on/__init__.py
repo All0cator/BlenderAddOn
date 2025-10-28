@@ -56,15 +56,25 @@ classes = (
 from bpy.app.handlers import persistent
 
 @persistent
+def trigger_render():
+    for area in bpy.context.screen.areas:
+        if area.type == "IMAGE_EDITOR":
+            area.tag_redraw()
+
+@persistent
 def render_pipeline_handler():
     if bad_pipeline.BAD_PIPELINE.pipeline == None:
         bad_pipeline.BAD_PIPELINE.create_pipeline()
 
     bad_pipeline.BAD_PIPELINE.pipeline.render(bpy.context)
 
+trigger_render_handler = None
+
 draw_handler = None
 
 def init_pipeline():
+    global trigger_render_handler
+    
     global draw_handler
     bad_pipeline.BAD_PIPELINE.create_pipeline()
 
@@ -75,15 +85,27 @@ def init_pipeline():
     bpy.app.handlers.depsgraph_update_post.append(bad_pipeline.mesh_update_handler)
 
     if draw_handler != None:
-        bpy.types.SpaceView3D.draw_handler_remove(draw_handler,
-                                                  'WINDOW')
+        bpy.types.SpaceImageEditor.draw_handler_remove(draw_handler,
+                                                  "WINDOW")
         draw_handler = None
 
-    draw_handler = bpy.types.SpaceView3D.draw_handler_add(
+    draw_handler = bpy.types.SpaceImageEditor.draw_handler_add(
         render_pipeline_handler,
         (),
-        'WINDOW',
-        'POST_PIXEL'
+        "WINDOW",
+        "POST_PIXEL"
+    )
+
+    if trigger_render_handler != None:
+        bpy.types.SpaceView3D.draw_handler_remove(trigger_render_handler,
+                                                  "WINDOW")
+        trigger_render_handler = None
+
+    trigger_render_handler = bpy.types.SpaceView3D.draw_handler_add(
+        trigger_render,
+        (),
+        "WINDOW",
+        "POST_PIXEL"
     )
 
     if render_pipeline_handler in bpy.app.handlers.render_post:

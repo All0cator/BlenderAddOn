@@ -18,10 +18,14 @@
 from .bad_globals import *
 
 import bpy
+import gpu
+import gpu_extras
 from gpu.types import GPUTexture, GPUFrameBuffer, GPUShaderCreateInfo, \
-    GPUVertFormat, GPUVertBuf, GPUIndexBuf, GPUBatch
+    GPUVertFormat, GPUVertBuf, GPUIndexBuf, GPUBatch, GPUStageInterfaceInfo
 from .bad_shaders import *
 import gpu
+
+from .bad_helpers import *
 
 from bpy.app.handlers import persistent
 
@@ -63,6 +67,8 @@ class BAD_PIPELINE:
         self.image_object_id = None
         self.image_depth_texture = None # uses linearized_depth to debug depth
 
+        self.texture_name_to_texture = {}
+
         self.program_object_id_depth = None
 
         # TODO: currently we are not deleting buffers for meshes that get deleted
@@ -100,6 +106,9 @@ class BAD_PIPELINE:
         far = None
         vp = None
 
+        texture_name = None
+        image_editor_aspect_ratio = 0
+        
         # Get near and far view plane values
         for area in context.screen.areas:
             if area.type == "VIEW_3D":
@@ -107,6 +116,20 @@ class BAD_PIPELINE:
                 near = space.clip_start
                 far = space.clip_end
                 vp = space.region_3d.perspective_matrix
+
+            if area.type == "IMAGE_EDITOR":
+                # query image selected in image editor
+                if area.height != 0:
+                    image_editor_aspect_ratio = area.width / area.height
+
+                for space in area.spaces:
+                    if space.type == "IMAGE_EDITOR":
+                        image = space.image
+
+                        if image != None:
+                            if contains_prefix(image.name):
+                                texture_name = get_name_from_prefixed_name(image.name)
+                            
 
         if near == None or far == None or vp == None: # do not render there is no ative VIEW_3D area active
             return
@@ -118,7 +141,7 @@ class BAD_PIPELINE:
             self.viewport_dimensions = queried_viewport_dimensions
             self.create_textures(context)
             self.create_framebuffers()
-            self.create_images()
+            #self.create_images()
 
         # bind framebuffer and render
         default_framebuffer = gpu.state.active_framebuffer_get()
@@ -129,7 +152,7 @@ class BAD_PIPELINE:
 
             fb = gpu.state.active_framebuffer_get()
 
-            fb.clear(color = (0.0, 0.0, 0.0, 0.0))
+            fb.clear(color = (0.0, 0.0, 0.0, 0.0), depth = 1.0)
             
             self.program_object_id_depth.bind()
             
@@ -156,16 +179,35 @@ class BAD_PIPELINE:
                     self.program_object_id_depth.uniform_float("mvp", mvp)
 
                     self.batches[uid].draw(self.program_object_id_depth)
-            
-
-            # output results to blender images
-            # this is very slow happens once every 50 renders TODO: optimize by not copying textures to images
-            if self.update_image_counter % 50 == 0:
-                self.copy_texture_data_to_image()
-
-            self.update_image_counter = (self.update_image_counter + 1) % 50 
 
         default_framebuffer.bind()
+
+        # draw Image 2D in Image Editor
+        # for now draw the Object ID
+        if texture_name != None and image_editor_aspect_ratio != 0:
+            texture = self.texture_name_to_texture[texture_name]
+
+            # center texture with fixed aspect ratio
+            texture_width = texture.width
+            texture_height = texture.height
+            texture_aspect_ratio = texture_width / texture_height
+
+            d = texture_aspect_ratio / image_editor_aspect_ratio
+            
+            if texture_width >= texture_height:
+                pos = ((-1.0, -1.0 / d), (1.0, -1.0 / d), (1.0, 1.0 / d), (-1.0, 1.0 / d))
+            else: # texture_height > texture_width:
+                pos = ((-1.0 * d, -1.0), (1.0 * d, -1.0), (1.0 * d, 1.0), (-1.0 * d, 1.0))
+            batch = gpu_extras.batch.batch_for_shader(self.program_texture_display, "TRI_FAN",
+                                                    {
+                                                        "pos" : pos,
+                                                        "texCoord" :((0, 0), (1, 0), (1, 1), (0, 1))
+                                                    })
+            
+            self.program_texture_display.bind()
+            self.program_texture_display.uniform_sampler("tex", texture)
+            self.program_texture_display.uniform_float("isMultipleChannels", 0.0)
+            batch.draw(self.program_texture_display)
 
     def copy_texture_data_to_image(self):
         linearized_depth_buffer_2d = [(c, c, c, 1.0) for r in self.texture_color_attachment_linearized_depth.read().to_list() for c in r]
@@ -192,6 +234,9 @@ class BAD_PIPELINE:
         self.texture_color_attachment_linearized_depth.clear(format = "FLOAT", value = (0.0,))
         self.texture_depth_attachment = GPUTexture(self.viewport_dimensions, format = "DEPTH_COMPONENT24")
         self.texture_depth_attachment.clear(format = "FLOAT", value = (1.0,))
+
+        self.texture_name_to_texture["Object ID"] = self.texture_color_attachment_object_id
+        self.texture_name_to_texture["Depth Linearized"] = self.texture_color_attachment_linearized_depth
         # create texture atlas
 
     def create_framebuffers(self):
@@ -205,7 +250,6 @@ class BAD_PIPELINE:
         
         self.image_object_id = bpy.data.images.new(BAD_PREFIX + "Object ID", self.viewport_dimensions[0], self.viewport_dimensions[1], alpha = True, float_buffer = True)
         self.image_depth_texture = bpy.data.images.new(BAD_PREFIX + "Depth Linearized", self.viewport_dimensions[0], self.viewport_dimensions[1], alpha = True, float_buffer = True)
-
         # create texture atlas image
 
     def create_shaders(self):
@@ -228,6 +272,28 @@ class BAD_PIPELINE:
         self.program_object_id_depth = gpu.shader.create_from_info(shader_create_info_object_id_depth)
 
         del shader_create_info_object_id_depth
+
+        shader_create_info_texture_display = GPUShaderCreateInfo()
+
+        shader_create_info_texture_display.push_constant("FLOAT", "isMultipleChannels")
+        shader_create_info_texture_display.sampler(0, "FLOAT_2D", "tex")
+
+        shader_create_info_texture_display.vertex_in(0, "VEC2", "pos")
+        shader_create_info_texture_display.vertex_in(1, "VEC2", "texCoord")
+
+        vertex_out = GPUStageInterfaceInfo("texture_display_interface")
+        vertex_out.smooth("VEC2", "fragTex")
+
+        shader_create_info_texture_display.vertex_out(vertex_out)
+
+        shader_create_info_texture_display.fragment_out(0, "VEC4", "fragOut")
+
+        shader_create_info_texture_display.vertex_source(vertex_shader_source_texture_display)
+        shader_create_info_texture_display.fragment_source(fragment_shader_source_texture_display)
+
+        self.program_texture_display = gpu.shader.create_from_info(shader_create_info_texture_display)
+
+        del shader_create_info_texture_display
 
     def create_vertex_index_buffers_batches(self):
         for obj in bpy.data.objects:

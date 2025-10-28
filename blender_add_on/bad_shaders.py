@@ -32,6 +32,7 @@ fragment_shader_source_object_id_depth = """
 //uniform float near; // Near and far plane values in projection matrix
 //uniform float far;
 //uniform float id;
+//uniform float numObjects;
 
 float LinearizeDepth(float d) {
     // Normalize Depth to NDC space[-1, 1] from clip space [0, 1]
@@ -42,7 +43,7 @@ float LinearizeDepth(float d) {
 
 void main() {
     float depthLinear = LinearizeDepth(gl_FragCoord.z);
-    objectID = id;
+    objectID = id / numObjects;
     linearizedDepth = (depthLinear - near) / (far - near); // normalize depth
 }
 """

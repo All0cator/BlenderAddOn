@@ -21,7 +21,7 @@ import bpy
 import gpu
 import gpu_extras
 from gpu.types import GPUTexture, GPUFrameBuffer, GPUShaderCreateInfo, \
-    GPUVertFormat, GPUVertBuf, GPUIndexBuf, GPUBatch, GPUStageInterfaceInfo
+    GPUVertFormat, GPUVertBuf, GPUIndexBuf, GPUBatch, GPUStageInterfaceInfo, GPUOffScreen
 from .bad_shaders import *
 import gpu
 
@@ -29,6 +29,7 @@ from .bad_helpers import *
 
 from bpy.app.handlers import persistent
 
+# TODO: add support for realtime mesh editing 
 @persistent
 def mesh_update_handler(scene, depsgraph):
     for update in depsgraph.updates:
@@ -63,6 +64,7 @@ class BAD_PIPELINE:
         self.texture_depth_attachment = None
         self.viewport_dimensions = (0, 0)
         self.framebuffer_view_3d = None
+        self.framebuffer_offscreen = None
         self.is_in_image_debug_mode = True
         self.image_object_id = None
         self.image_depth_texture = None # uses linearized_depth to debug depth
@@ -99,12 +101,20 @@ class BAD_PIPELINE:
         self.index_buffers.clear()
         self.batches.clear()
 
+        self.framebuffer_offscreen.free()
+
     # TODO: currently cannot handle instanced meshes
     # function should be called from UI thread
     def render(self, context : bpy.types.Context):
         near = None
         far = None
         vp = None
+        view_matrix = None
+        projection_matrix = None
+        view3d_space = None
+        view3d_window_region = None
+
+        is_render_valid = False
 
         texture_name = None
         image_editor_aspect_ratio = 0
@@ -112,10 +122,19 @@ class BAD_PIPELINE:
         # Get near and far view plane values
         for area in context.screen.areas:
             if area.type == "VIEW_3D":
-                space = area.spaces.active
-                near = space.clip_start
-                far = space.clip_end
-                vp = space.region_3d.perspective_matrix
+                view3d_space = area.spaces.active
+                near = view3d_space.clip_start
+                far = view3d_space.clip_end
+                vp = view3d_space.region_3d.perspective_matrix # Window Matrix @ View Matrix
+                view_matrix = view3d_space.region_3d.view_matrix
+                projection_matrix = view3d_space.region_3d.window_matrix
+
+
+                for region in area.regions:
+                    if region.type == "WINDOW":
+                        view3d_window_region = region
+                        is_render_valid = True
+                        break
 
             if area.type == "IMAGE_EDITOR":
                 # query image selected in image editor
@@ -131,7 +150,7 @@ class BAD_PIPELINE:
                                 texture_name = get_name_from_prefixed_name(image.name)
                             
 
-        if near == None or far == None or vp == None: # do not render there is no ative VIEW_3D area active
+        if not is_render_valid: # do not render there is no ative VIEW_3D area active
             return
 
         queried_viewport_dimensions = self.query_view_3d_dimensions(context)
@@ -158,6 +177,7 @@ class BAD_PIPELINE:
             
             self.program_object_id_depth.uniform_float("near", near)
             self.program_object_id_depth.uniform_float("far", far)
+            self.program_object_id_depth.uniform_float("numObjects", float(len(self.vertex_buffers)))
 
             object_id = 1.0
             
@@ -180,7 +200,12 @@ class BAD_PIPELINE:
 
                     self.batches[uid].draw(self.program_object_id_depth)
 
-        default_framebuffer.bind()
+        self.framebuffer_offscreen.bind()
+        self.framebuffer_offscreen.draw_view3d(context.scene, context.view_layer, view3d_space, 
+                                                   view3d_window_region, view_matrix, projection_matrix,
+                                                   do_color_management = False,
+                                                  draw_background = True)
+        self.framebuffer_offscreen.unbind(restore = True)
 
         # draw Image 2D in Image Editor
         # for now draw the Object ID
@@ -206,7 +231,12 @@ class BAD_PIPELINE:
             
             self.program_texture_display.bind()
             self.program_texture_display.uniform_sampler("tex", texture)
-            self.program_texture_display.uniform_float("isMultipleChannels", 0.0)
+
+            is_multiple_channels = 0.0
+            if texture_name == "Color":
+                is_multiple_channels = 1.0
+
+            self.program_texture_display.uniform_float("isMultipleChannels", is_multiple_channels)
             batch.draw(self.program_texture_display)
 
     def copy_texture_data_to_image(self):
@@ -241,15 +271,26 @@ class BAD_PIPELINE:
 
     def create_framebuffers(self):
         self.framebuffer_view_3d = GPUFrameBuffer(depth_slot = self.texture_depth_attachment, color_slots = (self.texture_color_attachment_object_id, self.texture_color_attachment_linearized_depth))
+        
+        if self.framebuffer_offscreen != None:
+            self.framebuffer_offscreen.free()
+        
+        self.framebuffer_offscreen = GPUOffScreen(self.viewport_dimensions[0], self.viewport_dimensions[1], format = "RGBA8")
+
+        self.texture_name_to_texture["Color"] = self.framebuffer_offscreen.texture_color
 
     def create_images(self):
         if ((BAD_PREFIX + "Object ID") in bpy.data.images):
             bpy.data.images.remove(bpy.data.images[BAD_PREFIX + "Object ID"])
         if ((BAD_PREFIX + "Depth Linearized") in bpy.data.images):
             bpy.data.images.remove(bpy.data.images[BAD_PREFIX + "Depth Linearized"])
-        
+        if ((BAD_PREFIX + "Color") in bpy.data.images):
+            bpy.data.images.remove(bpy.data.images[BAD_PREFIX + "Color"])
+
         self.image_object_id = bpy.data.images.new(BAD_PREFIX + "Object ID", self.viewport_dimensions[0], self.viewport_dimensions[1], alpha = True, float_buffer = True)
         self.image_depth_texture = bpy.data.images.new(BAD_PREFIX + "Depth Linearized", self.viewport_dimensions[0], self.viewport_dimensions[1], alpha = True, float_buffer = True)
+        self.image_color = bpy.data.images.new(BAD_PREFIX + "Color", self.viewport_dimensions[0], self.viewport_dimensions[1], alpha = True, float_buffer = True)
+
         # create texture atlas image
 
     def create_shaders(self):
@@ -258,6 +299,7 @@ class BAD_PIPELINE:
         shader_create_info_object_id_depth.push_constant("FLOAT", "near")
         shader_create_info_object_id_depth.push_constant("FLOAT", "far")
         shader_create_info_object_id_depth.push_constant("FLOAT", "id")
+        shader_create_info_object_id_depth.push_constant("FLOAT", "numObjects")
 
         shader_create_info_object_id_depth.vertex_in(0, "VEC3", "pos")
 

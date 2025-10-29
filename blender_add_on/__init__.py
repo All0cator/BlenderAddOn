@@ -95,6 +95,8 @@ def init_pipeline():
         "WINDOW",
         "POST_PIXEL"
     )
+    
+    # TODO: this is not correct should be for any view
 
     if trigger_render_handler != None:
         bpy.types.SpaceView3D.draw_handler_remove(trigger_render_handler,

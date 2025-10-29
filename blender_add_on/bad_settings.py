@@ -64,6 +64,12 @@ class BAD_PROPERTYGROUP_Settings(bpy.types.PropertyGroup):
         if not self.guard:
             self.set_render_resolution_height_power(self.m_render_resolution_height_power)
 
+    m_id : IntProperty (
+        name = "ID",
+        default = 0,
+        description = "ID of current Object"
+    )
+
     m_is_enabled : BoolProperty (
         name = "Enable",
         default = False,

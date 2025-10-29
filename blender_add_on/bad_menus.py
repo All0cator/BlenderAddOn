@@ -47,3 +47,7 @@ class BAD_PT_MainPanel(bpy.types.Panel):
         else:
             row.prop(settings, "m_render_resolution_height", text = "Resolution Height")
         row.prop(settings, "m_toggle_snapping_height", text = "")
+
+        col = layout.column(align = False)
+        row = col.row(align = True)
+        row.label(text = str(settings.m_id))

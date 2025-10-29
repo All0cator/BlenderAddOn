@@ -32,7 +32,6 @@ fragment_shader_source_object_id_depth = """
 //uniform float near; // Near and far plane values in projection matrix
 //uniform float far;
 //uniform float id;
-//uniform float numObjects;
 
 float LinearizeDepth(float d) {
     // Normalize Depth to NDC space[-1, 1] from clip space [0, 1]
@@ -43,8 +42,8 @@ float LinearizeDepth(float d) {
 
 void main() {
     float depthLinear = LinearizeDepth(gl_FragCoord.z);
-    objectID = id / numObjects;
-    linearizedDepth = (depthLinear - near) / (far - near); // normalize depth
+    objectID = id;
+    linearizedDepth = depthLinear;
 }
 """
 
@@ -69,13 +68,26 @@ fragment_shader_source_texture_display = """
 
 //uniform sampler2D tex;
 //uniform float isMultipleChannels; // 1.0f or 0.0f
+// if normalization is not desired because it already displays color data specify max = 1.0 and min = 0.0
+//uniform float channelMin;
+//uniform float channelMax; 
+
+float NormalizeChannel(float c) {
+    return (c - channelMin) / (channelMax - channelMin);
+}
+
 void main() {
     vec4 texel = texture(tex, fragTex);
+    
+    float rNormalized = NormalizeChannel(texel.r);
+    float gNormalized = NormalizeChannel(texel.g);
+    float bNormalized = NormalizeChannel(texel.b);
+    float aNormalized = NormalizeChannel(texel.a);
 
     // single channel display as grayscale value
-    vec4 singleChannel = vec4(texel.r, texel.r, texel.r, 1.0f);
+    vec4 singleChannel = vec4(rNormalized, rNormalized, rNormalized, 1.0f);
     // multiple channels display as color value
-    vec4 multipleChannels = texel;
+    vec4 multipleChannels = vec4(rNormalized, gNormalized, bNormalized, aNormalized);
 
     fragOut = singleChannel * (1.0f - isMultipleChannels) + multipleChannels * isMultipleChannels;
 }

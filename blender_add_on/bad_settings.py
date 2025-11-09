@@ -20,31 +20,35 @@ from math import log2, pow
 from bpy.props import *
 
 class BAD_PROPERTYGROUP_Settings(bpy.types.PropertyGroup):
-    guard : BoolProperty(default = False)
+    guard : BoolProperty(default = False) # used internally to prevent infinite recursion when settings m_render_resolution
 
     def set_render_resolution_width(self, new_render_resolution_width : int):
         self.guard = True
         self.m_render_resolution_width = int(new_render_resolution_width)
         self.m_render_resolution_width_power = int(log2(float(self.m_render_resolution_width)))
         self.guard = False
+        self.m_is_resolution_dirty = True
 
     def set_render_resolution_height(self, new_render_resolution_height : int):
         self.guard = True
         self.m_render_resolution_height = int(new_render_resolution_height)
         self.m_render_resolution_height_power = int(log2(float(self.m_render_resolution_height)))
         self.guard = False
+        self.m_is_resolution_dirty = True
 
     def set_render_resolution_width_power(self, new_render_resolution_width_power : int):
         self.guard = True
         self.m_render_resolution_width_power = int(new_render_resolution_width_power)
         self.m_render_resolution_width = int(1 << int(self.m_render_resolution_width_power))
         self.guard = False
+        self.m_is_resolution_dirty = True
 
     def set_render_resolution_height_power(self, new_render_resolution_height_power : int):
         self.guard = True
         self.m_render_resolution_height_power = int(new_render_resolution_height_power)
         self.m_render_resolution_height = int(1 << int(self.m_render_resolution_height_power))
         self.guard = False
+        self.m_is_resolution_dirty = True
 
     # Property Update functions
 
@@ -63,6 +67,12 @@ class BAD_PROPERTYGROUP_Settings(bpy.types.PropertyGroup):
     def update_render_resolution_height_power(self, context):
         if not self.guard:
             self.set_render_resolution_height_power(self.m_render_resolution_height_power)
+
+    m_is_resolution_dirty : BoolProperty (
+        name = "Is Resolution Dirty",
+        default = True,
+        description = "Shows whether the texture atlas and it's asscociated cell viewports buffer needs to be updated or not"
+    )
 
     m_id : IntProperty (
         name = "ID",

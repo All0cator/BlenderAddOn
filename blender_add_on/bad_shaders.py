@@ -92,3 +92,93 @@ void main() {
     fragOut = singleChannel * (1.0f - isMultipleChannels) + multipleChannels * isMultipleChannels;
 }
 """
+
+compute_shader_source_sprite_atlas_render_channels = """
+//#version 430 core
+
+// #define MAX_CELL_VIEWPORTS 100
+//layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+//uniform float viewportWidth;
+//uniform float viewportHeight;
+
+// SSBOs not supported 
+//layout(std430, binding = 0) buffer objectIDToCellViewport {
+//    vec4 cellViewports[];
+//    // (x, y, width, height)
+//};
+
+//layout(binding = 0, std140) uniform cellViewports {
+//    vec4[MAX_CELL_VIEWPORTS] _cellViewports;
+//};
+
+// Images
+//layout(binding = 1, r32f) uniform readonly image2D objectIDs;
+//layout(binding = 2, rgba8) uniform readonly image2D colors;
+//layout(binding = 3, r32ui) uniform uimage2D spriteAtlasR;
+//layout(binding = 4, r32ui) uniform uimage2D spriteAtlasG;
+//layout(binding = 5, r32ui) uniform uimage2D spriteAtlasB;
+
+void main() {
+    if(gl_GlobalInvocationID.x * 4 >= viewportWidth || gl_GlobalInvocationID.y * 4 >= viewportHeight) {
+        return;
+    }
+
+    for(int y = 0; y < 4; ++y) {
+        for(int x = 0; x < 4; ++x) {
+            int yy = int(gl_GlobalInvocationID.y) * 4 + y;
+            int xx = int(gl_GlobalInvocationID.x) * 4 + x;
+            float id = imageLoad(objectIDs, ivec2(xx, yy)).r;
+            vec4 cellViewport = _cellViewports[min(int(id), MAX_CELL_VIEWPORTS - 1)];
+            
+            // for now calculate each time pixel_size to be used as the denominator when calculating average
+            float cellPixelSize = (viewportWidth / cellViewport.z) *  (viewportHeight / cellViewport.w);
+
+            // map (xx, yy) to (xxAtlas, yyAtlas)
+
+			// (0, 0) -> (cellViewport.x, cellViewport.y)
+			// (viewportWidth, viewportHeight) -> (cellViewport.x + cellViewport.z, cellViewport.y + cellViewport.w)
+
+			// (xx, yy) -> ((xx / viewportWidth) * cellViewport.z + cellViewport.x, (yy / viewport_height) * cellViewport.w + cellViewport.y)
+
+			int xxAtlas = int(floor((float(xx) / viewportWidth) * cellViewport.z + cellViewport.x));
+			int yyAtlas = int(floor((float(yy) / viewportHeight) * cellViewport.w + cellViewport.y));
+
+            vec4 color = imageLoad(colors, ivec2(xx, yy));
+
+            imageAtomicAdd(spriteAtlasR, ivec2(xxAtlas, yyAtlas), uint((color.r / cellPixelSize) * 255.0f));
+            imageAtomicAdd(spriteAtlasG, ivec2(xxAtlas, yyAtlas), uint((color.g / cellPixelSize) * 255.0f));
+            imageAtomicAdd(spriteAtlasB, ivec2(xxAtlas, yyAtlas), uint((color.b / cellPixelSize) * 255.0f));
+        }
+    }
+}
+"""
+
+compute_shader_source_sprite_atlas_merge_channels_to_texture = """
+//#version 430 core
+
+//layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+//uniform float atlasWidth;
+//uniform float atlasHeight;
+
+// Images
+//layout(binding = 0, r32ui) uniform readwrite uimage2D spriteAtlasR;
+//layout(binding = 1, r32ui) uniform readwrite uimage2D spriteAtlasG;
+//layout(binding = 2, r32ui) uniform readwrite uimage2D spriteAtlasB;
+//layout(binding = 3, rgba8) uniform writeonly image2D spriteAtlas;
+
+void main() {
+    if(gl_GlobalInvocationID.x >= atlasWidth * atlasHeight) {
+        return;
+    }
+
+    // copy atlas channels to atlas texture
+    ivec2 coords = ivec2(int(mod(float(gl_GlobalInvocationID.x), atlasWidth)), ceil(float(gl_GlobalInvocationID.x) / float(atlasWidth)));
+    vec4 color = vec4(imageLoad(spriteAtlasR, coords).r / 255.0f, imageLoad(spriteAtlasG, coords).r / 255.0f, imageLoad(spriteAtlasB, coords).r / 255.0f, 1.0f);
+    imageStore(spriteAtlas, coords, color);
+    // clear sprite atlases
+    imageStore(spriteAtlasR, coords, uvec4(0));
+    imageStore(spriteAtlasG, coords, uvec4(0));
+    imageStore(spriteAtlasB, coords, uvec4(0));
+}
+"""
+

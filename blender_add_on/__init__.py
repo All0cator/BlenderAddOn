@@ -15,7 +15,25 @@
 #  All rights reserved.
 #  ***** GPL LICENSE BLOCK *****
 
+# try:
+#     import glfw
+# except ImportError:
+#     import subprocess
+#     import sys
+#     print("Installing GLFW used in creating OpenGL Context for BlenderAddOn...")
+#     subprocess.call([sys.executable, '-m', 'pip', 'install', 'glfw'])
+
+# try:
+#     import OpenGL.GL
+# except ImportError:
+#     import subprocess
+#     import sys
+#     print("Installing PyOpenGL used in creating compute shaders for BlenderAddOn...")
+#     subprocess.call([sys.executable, '-m', 'pip', 'install', 'PyOpenGL', 'PyOpenGL_accelerate'])
+
+
 # reload submodules if the addon is reloaded 
+
 if "bpy" in locals():
     import importlib
     importlib.reload(bad_globals)
@@ -37,7 +55,7 @@ bl_info = {
     "name": "BlenderAddOn",
     "author": "Allocator",
     "version": (0, 84),
-    "blender": (4, 0, 0),
+    "blender": (4, 5, 4),
     "location": "Object Mode | View3D > NewAddOn",
     "description": "Object Parameters for Rendering",
     "warning": "",
@@ -63,10 +81,10 @@ def trigger_render():
 
 @persistent
 def render_pipeline_handler():
-    if bad_pipeline.BAD_PIPELINE.pipeline == None:
-        bad_pipeline.BAD_PIPELINE.create_pipeline()
+    if bad_pipeline.BAD_Pipeline.pipeline == None:
+        bad_pipeline.BAD_Pipeline.create_pipeline()
 
-    bad_pipeline.BAD_PIPELINE.pipeline.render(bpy.context)
+    bad_pipeline.BAD_Pipeline.pipeline.render(bpy.context)
 
 trigger_render_handler = None
 
@@ -76,7 +94,7 @@ def init_pipeline():
     global trigger_render_handler
     
     global draw_handler
-    bad_pipeline.BAD_PIPELINE.create_pipeline()
+    bad_pipeline.BAD_Pipeline.create_pipeline()
 
     # update the handler if it is already registered
     if bad_pipeline.mesh_update_handler in bpy.app.handlers.depsgraph_update_post:
@@ -111,7 +129,7 @@ def init_pipeline():
     )
 
     if render_pipeline_handler in bpy.app.handlers.render_post:
-        bpy.app.handlers.render_post.remove()
+        bpy.app.handlers.render_post.remove(render_pipeline_handler)
  
     bpy.app.handlers.render_post.append(render_pipeline_handler)
 
@@ -125,7 +143,7 @@ def register():
     if "bad_settings" not in bpy.types.Object.__annotations__:
         bpy.types.Object.bad_settings = bpy.props.PointerProperty(type=bad_settings.BAD_PROPERTYGROUP_Settings)
 
-    bpy.app.timers.register(init_pipeline, first_interval = 1.0)
+    bpy.app.timers.register(init_pipeline, first_interval = 2.0)
 
 def unregister():
     # remove operators
@@ -133,7 +151,7 @@ def unregister():
         if c.is_registered:
             bpy.utils.unregister_class(c)
 
-    bad_pipeline.BAD_PIPELINE.delete_pipeline()
+    bad_pipeline.BAD_Pipeline.delete_pipeline()
 
 # allows running addon from text editor
 if __name__ == '__main__':

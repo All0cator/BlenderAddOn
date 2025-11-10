@@ -63,6 +63,7 @@ class BAD_Pipeline:
 
     def __init__(self):
         self.m_object_id_counter = 1 # ids are not zero indexed, 0 means not an object
+        # any fragments with id = 0 are rendered from the original image
         # declare member variables
         self.m_texture_color_attachment_object_id = None
         self.m_texture_color_attachment_linearized_depth = None
@@ -81,6 +82,7 @@ class BAD_Pipeline:
         self.m_image_depth_texture = None # uses linearized_depth to debug depth
         self.m_image_color = None
         self.m_image_sprite_atlas = None
+        self.m_image_combined_render = None
 
         self.m_texture_name_to_display_texture_info = {}
 
@@ -88,6 +90,7 @@ class BAD_Pipeline:
         self.m_program_texture_display = None
         self.m_program_sprite_atlas_render_channels = None
         self.m_program_sprite_atlas_merge_channels_to_texture = None
+        self.m_program_combined_render = None
 
         # TODO: currently we are not deleting buffers for meshes that get deleted
         self.m_vertex_buffers_data = {}
@@ -261,6 +264,20 @@ class BAD_Pipeline:
 
         gpu.compute.dispatch(self.m_program_sprite_atlas_merge_channels_to_texture, ceil((self.m_texture_atlas_dimensions[0] * self.m_texture_atlas_dimensions[1]) / 32), 1, 1)
 
+        self.m_program_combined_render.bind()
+
+        self.m_program_combined_render.uniform_float("viewportWidth", float(self.m_viewport_dimensions[0]))
+        self.m_program_combined_render.uniform_float("viewportHeight", float(self.m_viewport_dimensions[1]))
+        
+        self.m_program_combined_render.uniform_block("cellViewports", self.m_uniform_buffer_cell_viewports)
+        
+        self.m_program_combined_render.image("objectIDs", self.m_texture_name_to_display_texture_info["Object ID"]["texture"])
+        self.m_program_combined_render.image("colors", self.m_texture_name_to_display_texture_info["Color"]["texture"])
+        self.m_program_combined_render.image("spriteAtlas", self.m_texture_name_to_display_texture_info["Sprite Atlas"]["texture"])
+        self.m_program_combined_render.image("combinedRender", self.m_texture_name_to_display_texture_info["Combined Render"]["texture"])
+
+        gpu.compute.dispatch(self.m_program_combined_render, ceil((self.m_viewport_dimensions[0] * self.m_viewport_dimensions[1]) / 32), 1, 1)
+
         self.m_texture_name_to_display_texture_info["Object ID"]["channel_max"] = len(self.m_vertex_buffers)
         self.m_texture_name_to_display_texture_info["Depth Linearized"]["channel_min"] = near
         self.m_texture_name_to_display_texture_info["Depth Linearized"]["channel_max"] = far
@@ -307,6 +324,8 @@ class BAD_Pipeline:
         self.m_texture_color_attachment_linearized_depth.clear(format = "FLOAT", value = (0.0,))
         self.m_texture_depth_attachment = GPUTexture(self.m_viewport_dimensions, format = "DEPTH_COMPONENT24")
         self.m_texture_depth_attachment.clear(format = "FLOAT", value = (1.0,))
+        self.m_texture_combined_render = GPUTexture(self.m_viewport_dimensions, format = "RGBA8")
+        self.m_texture_combined_render.clear(format = "FLOAT", value = (0.0, 0.0, 0.0, 1.0))
 
         self.m_texture_name_to_display_texture_info["Object ID"] = { "texture" : self.m_texture_color_attachment_object_id,
                                                                      "is_multiple_channels" : 0.0,
@@ -316,6 +335,10 @@ class BAD_Pipeline:
                                                                             "is_multiple_channels" : 0.0,
                                                                             "channel_min" : 0.0, # set to default values they are going to be updated in render
                                                                             "channel_max" : 0.0}
+        self.m_texture_name_to_display_texture_info["Combined Render"] = { "texture" : self.m_texture_combined_render,
+                                                                           "is_multiple_channels" : 1.0,
+                                                                           "channel_min" : 0.0,
+                                                                           "channel_max" : 1.0}
 
     def create_sprite_atlas_textures(self):
         self.m_texture_sprite_atlas_r = GPUTexture(self.m_texture_atlas_dimensions, format = "R32UI")
@@ -357,6 +380,10 @@ class BAD_Pipeline:
         height_counter = 0
         max_resolution_height = 0
         #max_resolution_width = 0
+
+        # cell_viewports[0] is a special viewport holding the view 3d viewport
+        self.m_cell_viewports[0][2] = float(self.m_viewport_dimensions[0]) 
+        self.m_cell_viewports[0][3] = float(self.m_viewport_dimensions[1])
 
         for i in range(1, self.m_object_id_counter):
             if i >= BAD_MAX_CELL_VIEWPORTS_SIZE:
@@ -401,12 +428,15 @@ class BAD_Pipeline:
             bpy.data.images.remove(bpy.data.images[BAD_PREFIX + "Color"])
         if ((BAD_PREFIX + "Sprite Atlas") in bpy.data.images):
             bpy.data.images.remove(bpy.data.images[BAD_PREFIX + "Sprite Atlas"])
+        if ((BAD_PREFIX + "Combined Render") in bpy.data.images):
+            bpy.data.images.remove(bpy.data.images[BAD_PREFIX + "Combined Render"])
 
         # we only care for their selection we do not display any data to the images
         self.m_image_object_id = bpy.data.images.new(BAD_PREFIX + "Object ID", 1, 1)
         self.m_image_depth_texture = bpy.data.images.new(BAD_PREFIX + "Depth Linearized", 1, 1)
         self.m_image_color = bpy.data.images.new(BAD_PREFIX + "Color", 1, 1)
         self.m_image_sprite_atlas = bpy.data.images.new(BAD_PREFIX + "Sprite Atlas", 1, 1)
+        self.m_image_combined_render = bpy.data.images.new(BAD_PREFIX + "Combined Render", 1, 1)
 
     def create_shaders(self):
         shader_create_info_object_id_depth = GPUShaderCreateInfo()
@@ -486,6 +516,20 @@ class BAD_Pipeline:
 
         self.m_program_sprite_atlas_merge_channels_to_texture = gpu.shader.create_from_info(shader_create_info_sprite_atlas_merge_channels_to_texture)
        
+        shader_create_info_combined_render = GPUShaderCreateInfo()
+        shader_create_info_combined_render.compute_source(compute_shader_source_combined_render)
+        shader_create_info_combined_render.define("MAX_CELL_VIEWPORTS", str(BAD_MAX_CELL_VIEWPORTS_SIZE))
+        shader_create_info_combined_render.local_group_size(32, 1, 1)
+        shader_create_info_combined_render.push_constant("FLOAT", "viewportWidth")
+        shader_create_info_combined_render.push_constant("FLOAT", "viewportHeight")
+        shader_create_info_combined_render.uniform_buf(0, "vec4[" + str(BAD_MAX_CELL_VIEWPORTS_SIZE) + "]", "cellViewports")
+        shader_create_info_combined_render.image(1, "R32F", "FLOAT_2D", "objectIDs", qualifiers = {"READ"})
+        shader_create_info_combined_render.image(2, "RGBA8", "FLOAT_2D", "colors", qualifiers = {"READ"})
+        shader_create_info_combined_render.image(6, "RGBA8", "FLOAT_2D", "spriteAtlas", qualifiers = {"READ"})
+        shader_create_info_combined_render.image(7, "RGBA8", "FLOAT_2D", "combinedRender", qualifiers = {"WRITE"})
+        
+        self.m_program_combined_render = gpu.shader.create_from_info(shader_create_info_combined_render)
+
     def create_vertex_index_buffers_batches(self, context : bpy.context):
         for obj in bpy.data.objects:
             if obj.type == "MESH":

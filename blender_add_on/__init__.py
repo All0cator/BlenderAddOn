@@ -15,22 +15,6 @@
 #  All rights reserved.
 #  ***** GPL LICENSE BLOCK *****
 
-# try:
-#     import glfw
-# except ImportError:
-#     import subprocess
-#     import sys
-#     print("Installing GLFW used in creating OpenGL Context for BlenderAddOn...")
-#     subprocess.call([sys.executable, '-m', 'pip', 'install', 'glfw'])
-
-# try:
-#     import OpenGL.GL
-# except ImportError:
-#     import subprocess
-#     import sys
-#     print("Installing PyOpenGL used in creating compute shaders for BlenderAddOn...")
-#     subprocess.call([sys.executable, '-m', 'pip', 'install', 'PyOpenGL', 'PyOpenGL_accelerate'])
-
 
 # reload submodules if the addon is reloaded 
 

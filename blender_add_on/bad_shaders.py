@@ -77,7 +77,7 @@ float NormalizeChannel(float c) {
 }
 
 void main() {
-    vec4 texel = texture(tex, fragTex);
+    vec4 texel = texture(tex, vec2(fragTex.x, fragTex.y));
     
     float rNormalized = NormalizeChannel(texel.r);
     float gNormalized = NormalizeChannel(texel.g);
@@ -124,7 +124,9 @@ void main() {
     }
 
     for(int y = 0; y < 4; ++y) {
+        if (gl_GlobalInvocationID.y * 4 + y >= viewportHeight) return;
         for(int x = 0; x < 4; ++x) {
+            if(gl_GlobalInvocationID.x * 4 + y >= viewportWidth) break;
             int yy = int(gl_GlobalInvocationID.y) * 4 + y;
             int xx = int(gl_GlobalInvocationID.x) * 4 + x;
             float id = imageLoad(objectIDs, ivec2(xx, yy)).r;
@@ -143,7 +145,7 @@ void main() {
 			int xxAtlas = int(floor((float(xx) / viewportWidth) * cellViewport.z + cellViewport.x));
 			int yyAtlas = int(floor((float(yy) / viewportHeight) * cellViewport.w + cellViewport.y));
 
-            vec4 color = imageLoad(colors, ivec2(xx, yy));
+            vec4 color = vec4(0.0, 0.0, 0.0, 1.0) * max(1.0f - id, 0.0f) + min(id, 1.0f) * imageLoad(colors, ivec2(xx, yy));
 
             imageAtomicAdd(spriteAtlasR, ivec2(xxAtlas, yyAtlas), uint((color.r / cellPixelSize) * 255.0f));
             imageAtomicAdd(spriteAtlasG, ivec2(xxAtlas, yyAtlas), uint((color.g / cellPixelSize) * 255.0f));
@@ -161,10 +163,10 @@ compute_shader_source_sprite_atlas_merge_channels_to_texture = """
 //uniform float atlasHeight;
 
 // Images
-//layout(binding = 0, r32ui) uniform readwrite uimage2D spriteAtlasR;
-//layout(binding = 1, r32ui) uniform readwrite uimage2D spriteAtlasG;
-//layout(binding = 2, r32ui) uniform readwrite uimage2D spriteAtlasB;
-//layout(binding = 3, rgba8) uniform writeonly image2D spriteAtlas;
+//layout(binding = 3, r32ui) uniform readwrite uimage2D spriteAtlasR;
+//layout(binding = 4, r32ui) uniform readwrite uimage2D spriteAtlasG;
+//layout(binding = 5, r32ui) uniform readwrite uimage2D spriteAtlasB;
+//layout(binding = 6, rgba8) uniform writeonly image2D spriteAtlas;
 
 void main() {
     if(gl_GlobalInvocationID.x >= atlasWidth * atlasHeight) {
@@ -172,13 +174,56 @@ void main() {
     }
 
     // copy atlas channels to atlas texture
-    ivec2 coords = ivec2(int(mod(float(gl_GlobalInvocationID.x), atlasWidth)), ceil(float(gl_GlobalInvocationID.x) / float(atlasWidth)));
+    ivec2 coords = ivec2(int(mod(float(gl_GlobalInvocationID.x), atlasWidth)), ceil(float(gl_GlobalInvocationID.x) / atlasWidth));
     vec4 color = vec4(imageLoad(spriteAtlasR, coords).r / 255.0f, imageLoad(spriteAtlasG, coords).r / 255.0f, imageLoad(spriteAtlasB, coords).r / 255.0f, 1.0f);
     imageStore(spriteAtlas, coords, color);
     // clear sprite atlases
     imageStore(spriteAtlasR, coords, uvec4(0));
-    imageStore(spriteAtlasG, coords, uvec4(0));
     imageStore(spriteAtlasB, coords, uvec4(0));
+    imageStore(spriteAtlasG, coords, uvec4(0));
 }
 """
 
+compute_shader_source_combined_render = """
+// #define MAX_CELL_VIEWPORTS 100
+
+// layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+//uniform float viewportWidth;
+//uniform float viewportHeight;
+
+//layout(binding = 0, std140) uniform cellViewports {
+//    vec4[MAX_CELL_VIEWPORTS] _cellViewports;
+//};
+
+//layout(binding = 1, r32f) uniform readonly image2D objectIDs;
+//layout(binding = 2, rgba8) uniform readonly image2D colors;
+//layout(binding = 6, rgba8) uniform readonly image2D spriteAtlas;
+//layout(binding = 7, rgba8) uniform writeonly image2D combinedRender;
+
+void main() {
+    if(gl_GlobalInvocationID.x >= viewportWidth * viewportHeight) {
+        return;
+    }
+
+    // combine spriteAtlas with colors using objectIDs
+    ivec2 coords = ivec2(int(mod(float(gl_GlobalInvocationID.x), viewportWidth)), ceil((float(gl_GlobalInvocationID.x) / viewportWidth)));
+    float id = imageLoad(objectIDs, coords).r;
+    vec4 cellViewport = _cellViewports[min(int(id), MAX_CELL_VIEWPORTS - 1)];
+    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+
+    ivec2 sampleCoords = ivec2(
+    int(floor((float(coords.x) / viewportWidth) * cellViewport.z + cellViewport.x)),
+    int(floor((float(coords.y) / viewportHeight) * cellViewport.w + cellViewport.y))
+    );
+
+    if(id == 0.0f) {
+        color = imageLoad(colors, coords);
+    } else {
+        // get it from the spriteAtlas
+        color = imageLoad(spriteAtlas, sampleCoords);
+    }
+    
+    // write color to combinedRender
+    imageStore(combinedRender, coords, color);
+}
+"""

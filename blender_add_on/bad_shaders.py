@@ -132,9 +132,6 @@ void main() {
             int xx = int(gl_GlobalInvocationID.x) * 4 + x;
             float id = imageLoad(objectIDs, ivec2(xx, yy)).r;
             vec4 cellViewport = _cellViewports[min(int(id), MAX_CELL_VIEWPORTS - 1)];
-            
-            // for now calculate each time pixel_size to be used as the denominator when calculating average
-            float cellPixelSize = (viewportWidth / cellViewport.z) *  (viewportHeight / cellViewport.w);
 
             // map (xx, yy) to (xxAtlas, yyAtlas)
 
@@ -143,8 +140,11 @@ void main() {
 
 			// (xx, yy) -> ((xx / viewportWidth) * cellViewport.z + cellViewport.x, (yy / viewport_height) * cellViewport.w + cellViewport.y)
 
-			int xxAtlas = int(floor((float(xx) / viewportWidth) * cellViewport.z + cellViewport.x));
-			int yyAtlas = int(floor((float(yy) / viewportHeight) * cellViewport.w + cellViewport.y));
+			//int xxAtlas = int(floor((float(xx) / viewportWidth) * cellViewport.z  + cellViewport.x));
+			//int yyAtlas = int(floor((float(yy) / viewportHeight) * cellViewport.w + cellViewport.y));
+            // the calculation bellow has much better numerical stability
+            int xxAtlas = int(floor((float(xx) * cellViewport.z + viewportWidth * cellViewport.x) / viewportWidth));
+            int yyAtlas = int(floor((float(yy) * cellViewport.w + viewportHeight * cellViewport.y) / viewportHeight));
 
             vec4 color = vec4(0.0, 0.0, 0.0, 1.0) * max(1.0f - id, 0.0f) + min(id, 1.0f) * imageLoad(colors, ivec2(xx, yy));
 

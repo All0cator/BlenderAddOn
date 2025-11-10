@@ -247,6 +247,7 @@ class BAD_Pipeline:
         self.m_program_sprite_atlas_render_channels.image("spriteAtlasR", self.m_texture_name_to_display_texture_info["Sprite Atlas R"]["texture"])
         self.m_program_sprite_atlas_render_channels.image("spriteAtlasG", self.m_texture_name_to_display_texture_info["Sprite Atlas G"]["texture"])
         self.m_program_sprite_atlas_render_channels.image("spriteAtlasB", self.m_texture_name_to_display_texture_info["Sprite Atlas B"]["texture"])
+        self.m_program_sprite_atlas_render_channels.image("spriteAtlasAverageDenominator", self.m_texture_name_to_display_texture_info["Sprite Atlas Average Denominator"]["texture"])
 
         gpu.compute.dispatch(self.m_program_sprite_atlas_render_channels, ceil(self.m_viewport_dimensions[0] / 32), ceil(self.m_viewport_dimensions[1] / 32), 1)
 
@@ -261,6 +262,7 @@ class BAD_Pipeline:
         self.m_program_sprite_atlas_merge_channels_to_texture.image("spriteAtlasG", self.m_texture_name_to_display_texture_info["Sprite Atlas G"]["texture"])
         self.m_program_sprite_atlas_merge_channels_to_texture.image("spriteAtlasB", self.m_texture_name_to_display_texture_info["Sprite Atlas B"]["texture"])
         self.m_program_sprite_atlas_merge_channels_to_texture.image("spriteAtlas", self.m_texture_name_to_display_texture_info["Sprite Atlas"]["texture"])
+        self.m_program_sprite_atlas_merge_channels_to_texture.image("spriteAtlasAverageDenominator", self.m_texture_name_to_display_texture_info["Sprite Atlas Average Denominator"]["texture"])
 
         gpu.compute.dispatch(self.m_program_sprite_atlas_merge_channels_to_texture, ceil((self.m_texture_atlas_dimensions[0] * self.m_texture_atlas_dimensions[1]) / 32), 1, 1)
 
@@ -347,8 +349,11 @@ class BAD_Pipeline:
         self.m_texture_sprite_atlas_g.clear(format = "UINT", value = (0,))
         self.m_texture_sprite_atlas_b = GPUTexture(self.m_texture_atlas_dimensions, format = "R32UI")
         self.m_texture_sprite_atlas_b.clear(format = "UINT", value = (0,))
+        self.m_texture_sprite_atlas_average_denominator = GPUTexture(self.m_texture_atlas_dimensions, format = "R32UI")
+        self.m_texture_sprite_atlas_average_denominator.clear(format = "UINT", value = (0,))
         self.m_texture_sprite_atlas = GPUTexture(self.m_texture_atlas_dimensions, format = "RGBA8")
         self.m_texture_sprite_atlas.clear(format = "FLOAT", value = (0.0, 0.0, 0.0, 1.0))
+        
 
         self.m_texture_name_to_display_texture_info["Sprite Atlas R"] = { "texture" : self.m_texture_sprite_atlas_r,
                                                                      "is_multiple_channels" : 0.0,
@@ -360,6 +365,10 @@ class BAD_Pipeline:
                                                                             "channel_max" : 255.0}
         
         self.m_texture_name_to_display_texture_info["Sprite Atlas B"] = { "texture" : self.m_texture_sprite_atlas_b,
+                                                                     "is_multiple_channels" : 0.0,
+                                                                     "channel_min" : 0.0,
+                                                                     "channel_max" : 255.0}
+        self.m_texture_name_to_display_texture_info["Sprite Atlas Average Denominator"] = { "texture" : self.m_texture_sprite_atlas_average_denominator,
                                                                      "is_multiple_channels" : 0.0,
                                                                      "channel_min" : 0.0,
                                                                      "channel_max" : 255.0}
@@ -498,6 +507,7 @@ class BAD_Pipeline:
         shader_create_info_sprite_atlas_render_channels.image(3, "R32UI", "UINT_2D", "spriteAtlasR", qualifiers = {"READ", "WRITE"})
         shader_create_info_sprite_atlas_render_channels.image(4, "R32UI", "UINT_2D", "spriteAtlasG", qualifiers = {"READ", "WRITE"})
         shader_create_info_sprite_atlas_render_channels.image(5, "R32UI", "UINT_2D", "spriteAtlasB", qualifiers = {"READ", "WRITE"})
+        shader_create_info_sprite_atlas_render_channels.image(6, "R32UI", "UINT_2D", "spriteAtlasAverageDenominator", qualifiers = {"READ", "WRITE"})
 
         self.m_program_sprite_atlas_render_channels = gpu.shader.create_from_info(shader_create_info_sprite_atlas_render_channels)
 
@@ -513,6 +523,7 @@ class BAD_Pipeline:
         shader_create_info_sprite_atlas_merge_channels_to_texture.image(4, "R32UI", "UINT_2D", "spriteAtlasG", qualifiers = {"READ", "WRITE"})
         shader_create_info_sprite_atlas_merge_channels_to_texture.image(5, "R32UI", "UINT_2D", "spriteAtlasB", qualifiers = {"READ", "WRITE"})
         shader_create_info_sprite_atlas_merge_channels_to_texture.image(6, "RGBA8", "FLOAT_2D", "spriteAtlas", qualifiers = {"WRITE"})
+        shader_create_info_sprite_atlas_merge_channels_to_texture.image(7, "R32UI", "UINT_2D", "spriteAtlasAverageDenominator", qualifiers = {"READ", "WRITE"})
 
         self.m_program_sprite_atlas_merge_channels_to_texture = gpu.shader.create_from_info(shader_create_info_sprite_atlas_merge_channels_to_texture)
        

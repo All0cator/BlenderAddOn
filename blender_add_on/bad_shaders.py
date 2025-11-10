@@ -117,6 +117,7 @@ compute_shader_source_sprite_atlas_render_channels = """
 //layout(binding = 3, r32ui) uniform uimage2D spriteAtlasR;
 //layout(binding = 4, r32ui) uniform uimage2D spriteAtlasG;
 //layout(binding = 5, r32ui) uniform uimage2D spriteAtlasB;
+//layout(binding = 6, r32ui) uniform uimage2D spriteAtlasAverageDenominator;
 
 void main() {
     if(gl_GlobalInvocationID.x * 4 >= viewportWidth || gl_GlobalInvocationID.y * 4 >= viewportHeight) {
@@ -147,9 +148,10 @@ void main() {
 
             vec4 color = vec4(0.0, 0.0, 0.0, 1.0) * max(1.0f - id, 0.0f) + min(id, 1.0f) * imageLoad(colors, ivec2(xx, yy));
 
-            imageAtomicAdd(spriteAtlasR, ivec2(xxAtlas, yyAtlas), uint((color.r / cellPixelSize) * 255.0f));
-            imageAtomicAdd(spriteAtlasG, ivec2(xxAtlas, yyAtlas), uint((color.g / cellPixelSize) * 255.0f));
-            imageAtomicAdd(spriteAtlasB, ivec2(xxAtlas, yyAtlas), uint((color.b / cellPixelSize) * 255.0f));
+            imageAtomicAdd(spriteAtlasR, ivec2(xxAtlas, yyAtlas), uint(color.r * 255.0f));
+            imageAtomicAdd(spriteAtlasG, ivec2(xxAtlas, yyAtlas), uint(color.g * 255.0f));
+            imageAtomicAdd(spriteAtlasB, ivec2(xxAtlas, yyAtlas), uint(color.b * 255.0f));
+            imageAtomicAdd(spriteAtlasAverageDenominator, ivec2(xxAtlas, yyAtlas), 1);
         }
     }
 }
@@ -167,6 +169,7 @@ compute_shader_source_sprite_atlas_merge_channels_to_texture = """
 //layout(binding = 4, r32ui) uniform readwrite uimage2D spriteAtlasG;
 //layout(binding = 5, r32ui) uniform readwrite uimage2D spriteAtlasB;
 //layout(binding = 6, rgba8) uniform writeonly image2D spriteAtlas;
+//layout(binding = 7, r32ui) uniform readonly uimage2D spriteAtlasAverageDenominator;
 
 void main() {
     if(gl_GlobalInvocationID.x >= atlasWidth * atlasHeight) {
@@ -175,9 +178,15 @@ void main() {
 
     // copy atlas channels to atlas texture
     ivec2 coords = ivec2(int(mod(float(gl_GlobalInvocationID.x), atlasWidth)), ceil(float(gl_GlobalInvocationID.x) / atlasWidth));
-    vec4 color = vec4(imageLoad(spriteAtlasR, coords).r / 255.0f, imageLoad(spriteAtlasG, coords).r / 255.0f, imageLoad(spriteAtlasB, coords).r / 255.0f, 1.0f);
+    float d = imageLoad(spriteAtlasAverageDenominator, coords).r;
+    float r = imageLoad(spriteAtlasR, coords).r / (d * 255.0f);
+    float g = imageLoad(spriteAtlasR, coords).r / (d * 255.0f);
+    float b = imageLoad(spriteAtlasR, coords).r / (d * 255.0f);
+
+    vec4 color = vec4(r, g, b, 1.0f);
     imageStore(spriteAtlas, coords, color);
     // clear sprite atlases
+    imageStore(spriteAtlasAverageDenominator, coords, uvec4(0));
     imageStore(spriteAtlasR, coords, uvec4(0));
     imageStore(spriteAtlasB, coords, uvec4(0));
     imageStore(spriteAtlasG, coords, uvec4(0));

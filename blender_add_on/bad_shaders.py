@@ -143,8 +143,8 @@ void main() {
 			//int xxAtlas = int(floor((float(xx) / viewportWidth) * cellViewport.z  + cellViewport.x));
 			//int yyAtlas = int(floor((float(yy) / viewportHeight) * cellViewport.w + cellViewport.y));
             // the calculation bellow has much better numerical stability
-            int xxAtlas = int(floor((float(xx) * cellViewport.z + viewportWidth * cellViewport.x) / viewportWidth));
-            int yyAtlas = int(floor((float(yy) * cellViewport.w + viewportHeight * cellViewport.y) / viewportHeight));
+            int xxAtlas = int(floor(float(int(xx) * int(cellViewport.z) + int(viewportWidth) * int(cellViewport.x)) / float(viewportWidth)));
+            int yyAtlas = int(floor(float(int(yy) * int(cellViewport.w) + int(viewportHeight) * int(cellViewport.y)) / float(viewportHeight)));
 
             vec4 color = vec4(0.0, 0.0, 0.0, 1.0) * max(1.0f - id, 0.0f) + min(id, 1.0f) * imageLoad(colors, ivec2(xx, yy));
 
@@ -180,8 +180,8 @@ void main() {
     ivec2 coords = ivec2(int(mod(float(gl_GlobalInvocationID.x), atlasWidth)), ceil(float(gl_GlobalInvocationID.x) / atlasWidth));
     float d = imageLoad(spriteAtlasAverageDenominator, coords).r;
     float r = imageLoad(spriteAtlasR, coords).r / (d * 255.0f);
-    float g = imageLoad(spriteAtlasR, coords).r / (d * 255.0f);
-    float b = imageLoad(spriteAtlasR, coords).r / (d * 255.0f);
+    float g = imageLoad(spriteAtlasG, coords).r / (d * 255.0f);
+    float b = imageLoad(spriteAtlasB, coords).r / (d * 255.0f);
 
     vec4 color = vec4(r, g, b, 1.0f);
     imageStore(spriteAtlas, coords, color);
